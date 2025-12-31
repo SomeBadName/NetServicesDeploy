@@ -20,7 +20,7 @@ on:
       dockerfile_path:
         type: string
         required: false
-        default: "./Dockerfile"
+        default: "./DockerFile"
       health_path:
         type: string
         required: false
