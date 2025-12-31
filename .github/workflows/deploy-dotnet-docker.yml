@@ -1,0 +1,128 @@
+name: Deploy Docker Service (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      service_name:
+        type: string
+        required: true
+      host_port:
+        type: string
+        required: true
+      container_port:
+        type: string
+        required: false
+        default: "8080"
+      stack_dir:
+        type: string
+        required: false
+        default: ""
+      dockerfile_path:
+        type: string
+        required: false
+        default: "./Dockerfile"
+      health_path:
+        type: string
+        required: false
+        default: "/health"
+    secrets:
+      MINIO_ACCESS_KEY:
+        required: true
+      MINIO_SECRET_KEY:
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build_and_deploy:
+    runs-on: [self-hosted]
+
+    steps:
+      - name: Checkout service repo
+        uses: actions/checkout@v4
+
+      - name: Compute vars
+        shell: bash
+        run: |
+          OWNER_LC="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          SERVICE="${{ inputs.service_name }}"
+          echo "SERVICE=$SERVICE" >> $GITHUB_ENV
+          echo "OWNER_LC=$OWNER_LC" >> $GITHUB_ENV
+          echo "IMAGE=ghcr.io/${OWNER_LC}/${SERVICE}:latest" >> $GITHUB_ENV
+
+          if [[ -n "${{ inputs.stack_dir }}" ]]; then
+            echo "STACK_DIR=${{ inputs.stack_dir }}" >> $GITHUB_ENV
+          else
+            echo "STACK_DIR=/opt/stacks/${SERVICE}" >> $GITHUB_ENV
+          fi
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ inputs.dockerfile_path }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}
+            ghcr.io/${{ env.OWNER_LC }}/${{ env.SERVICE }}:${{ github.sha }}
+
+      - name: Ensure stack folder (no sudo)
+        run: |
+          mkdir -p "${STACK_DIR}"
+
+      - name: Write stack .env (runtime secrets + image)
+        run: |
+          cat > "${STACK_DIR}/.env" <<ENV
+          IMAGE=${IMAGE}
+          HOST_PORT=${{ inputs.host_port }}
+          CONTAINER_PORT=${{ inputs.container_port }}
+          MINIO_ACCESS_KEY=${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY=${{ secrets.MINIO_SECRET_KEY }}
+          ENV
+          chmod 600 "${STACK_DIR}/.env"
+
+      - name: Render docker-compose.yml (from template)
+        shell: bash
+        run: |
+          cat > "${STACK_DIR}/docker-compose.yml" <<'YML'
+          services:
+            ${SERVICE}:
+              image: ${IMAGE}
+              container_name: ${SERVICE}
+              ports:
+                - "${HOST_PORT}:${CONTAINER_PORT}"
+              env_file:
+                - .env
+              restart: unless-stopped
+          YML
+
+      - name: Deploy (pull + up)
+        run: |
+          cd "${STACK_DIR}"
+          docker compose pull
+          docker compose up -d
+          docker ps --filter "name=${SERVICE}"
+
+      - name: Health check
+        shell: bash
+        run: |
+          URL="http://127.0.0.1:${{ inputs.host_port }}${{ inputs.health_path }}"
+          echo "Checking $URL"
+          for i in {1..25}; do
+            if curl -fsS "$URL" >/dev/null; then
+              echo "OK"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Healthcheck failed" >&2
+          exit 1
