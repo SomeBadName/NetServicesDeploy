@@ -93,17 +93,18 @@ jobs:
       - name: Render docker-compose.yml (from template)
         shell: bash
         run: |
-          cat > "${STACK_DIR}/docker-compose.yml" <<'YML'
+          cat > "${STACK_DIR}/docker-compose.yml" <<YML
           services:
             ${SERVICE}:
               image: ${IMAGE}
               container_name: ${SERVICE}
               ports:
-                - "${HOST_PORT}:${CONTAINER_PORT}"
+                - "${{ inputs.host_port }}:${{ inputs.container_port }}"
               env_file:
                 - .env
               restart: unless-stopped
           YML
+
 
       - name: Deploy (pull + up)
         run: |
