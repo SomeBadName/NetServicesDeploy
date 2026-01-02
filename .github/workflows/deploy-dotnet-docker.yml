@@ -25,11 +25,14 @@ on:
         type: string
         required: false
         default: "/health"
-    secrets:
-      MINIO_ACCESS_KEY:
-        required: true
-      MINIO_SECRET_KEY:
-        required: true
+      env_vars:
+        type: string
+        required: false
+        default: ""
+      env_secrets:
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -81,13 +84,19 @@ jobs:
 
       - name: Write stack .env (runtime secrets + image)
         run: |
-          cat > "${STACK_DIR}/.env" <<ENV
-          IMAGE=${IMAGE}
-          HOST_PORT=${{ inputs.host_port }}
-          CONTAINER_PORT=${{ inputs.container_port }}
-          MINIO_ACCESS_KEY=${{ secrets.MINIO_ACCESS_KEY }}
-          MINIO_SECRET_KEY=${{ secrets.MINIO_SECRET_KEY }}
-          ENV
+          {
+            echo "IMAGE=${IMAGE}"
+            echo "HOST_PORT=${{ inputs.host_port }}"
+            echo "CONTAINER_PORT=${{ inputs.container_port }}"
+
+            if [[ -n "${{ inputs.env_vars }}" ]]; then
+              printf '%s\n' "${{ inputs.env_vars }}"
+            fi
+
+            if [[ -n "${{ inputs.env_secrets }}" ]]; then
+              printf '%s\n' "${{ inputs.env_secrets }}"
+            fi
+          } > "${STACK_DIR}/.env"
           chmod 600 "${STACK_DIR}/.env"
 
       - name: Render docker-compose.yml (from template)
