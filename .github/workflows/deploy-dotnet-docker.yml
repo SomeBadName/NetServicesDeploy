@@ -33,6 +33,12 @@ on:
         type: string
         required: false
         default: ""
+    secrets:
+          S1: { required: false }
+          S2: { required: false }
+          S3: { required: false }
+          S4: { required: false }
+          S5: { required: false }
 
 permissions:
   contents: read
@@ -83,18 +89,30 @@ jobs:
           mkdir -p "${STACK_DIR}"
 
       - name: Write stack .env (runtime secrets + image)
+        shell: bash
+        env:
+          S1: ${{ secrets.S1 }}
+          S2: ${{ secrets.S2 }}
+          S3: ${{ secrets.S3 }}
+          S4: ${{ secrets.S4 }}
+          S5: ${{ secrets.S5 }}
         run: |
           {
             echo "IMAGE=${IMAGE}"
             echo "HOST_PORT=${{ inputs.host_port }}"
             echo "CONTAINER_PORT=${{ inputs.container_port }}"
 
+            # Non-secret vars
             if [[ -n "${{ inputs.env_vars }}" ]]; then
               printf '%s\n' "${{ inputs.env_vars }}"
             fi
 
+            # Secret lines template (supports $S1..$S5 placeholders)
             if [[ -n "${{ inputs.env_secrets }}" ]]; then
-              printf '%s\n' "${{ inputs.env_secrets }}"
+              while IFS= read -r line; do
+                [[ -z "$line" ]] && continue
+                eval "echo \"$line\""
+              done <<< "${{ inputs.env_secrets }}"
             fi
           } > "${STACK_DIR}/.env"
           chmod 600 "${STACK_DIR}/.env"
@@ -111,6 +129,8 @@ jobs:
                 - "${{ inputs.host_port }}:${{ inputs.container_port }}"
               env_file:
                 - .env
+              environment:
+                ASPNETCORE_URLS: http://0.0.0.0:${{ inputs.container_port }}
               restart: unless-stopped
           YML
 
