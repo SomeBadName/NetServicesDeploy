@@ -1,134 +1,84 @@
 NetServicesDeploy
+=================
 
-NetServicesDeploy provides a centralized, reusable GitHub Actions workflow to build, publish, and deploy Docker-based .NET services using a self-hosted runner.
+Centralized, reusable GitHub Actions workflows for building, publishing, and deploying Docker-based .NET services on a self-hosted runner.
 
-Each service lives in its own repository.
-All deployment logic lives here.
+## Why use this?
 
-No SSH scripts.
-No manual server steps.
-No duplicated pipelines.
+* One deployment engine for all services
+* Consistent Docker builds and GHCR publishing
+* Predictable server layout and runtime files
+* Environment-based secrets (prod, stage, etc.)
+* Works across many independent repositories (no monorepo required)
+* Scales as the number of services grows
 
-What this solves
+## How it works (high level)
 
-One deployment engine for all services
+On every push to a service repository, the workflow:
 
-Consistent Docker builds and GHCR publishing
+1. Builds the Docker image from the service repository.
+2. Pushes the image to GitHub Container Registry (GHCR).
+3. Creates/updates the service stack folder on the server.
+4. Generates the runtime `.env` file.
+5. Renders `docker-compose.yml`.
+6. Restarts the container with Docker Compose.
+7. Runs a health check.
 
-Consistent server layout
+## Requirements
 
-Environment-based secrets (prod, stage, etc.)
+### Server
 
-Works with many independent repositories (no monorepo)
+* Linux server with Docker and Docker Compose v2+
+* GitHub Actions self-hosted runner
+  * Runner user belongs to the `docker` group.
+  * Runner user has write access to `/opt/stacks`.
+  * Recommended one-time setup:
 
-Designed to scale as the number of services grows
+    ```bash
+    sudo mkdir -p /opt/stacks
+    sudo chown -R <runner-user>:<runner-user> /opt/stacks
+    ```
 
-Architecture overview
+### GitHub
 
-On every push to a service repository:
+* Service repositories under the same organization
+* GHCR enabled
+* Reusable workflows allowed at the org level
 
-Docker image is built from the service repo
+## Server layout
 
-Image is pushed to GitHub Container Registry (GHCR)
+Each deployed service lives under:
 
-Server stack folder is created/updated
-
-Runtime .env file is generated
-
-docker-compose.yml is rendered
-
-Container is restarted using docker compose
-
-Health check is executed
-
-Requirements
-Server
-
-Linux server
-
-Docker installed
-
-Docker Compose v2+
-
-GitHub Actions self-hosted runner
-
-Runner user:
-
-belongs to the docker group
-
-has write access to /opt/stacks
-
-Recommended one-time setup:
-
-sudo mkdir -p /opt/stacks
-sudo chown -R <runner-user>:<runner-user> /opt/stacks
-
-GitHub
-
-Repositories under the same organization
-
-GHCR enabled
-
-Reusable workflows allowed at org level
-
-Server layout
-
-Each deployed service is stored under:
-
+```text
 /opt/stacks/<service_name>/
 ├── docker-compose.yml
 └── .env
+```
 
+> ⚠️ These files are managed by the workflow. Do not edit them manually.
 
-⚠️ These files are managed by the workflow.
-Do not edit them manually.
+## Secrets model (important)
 
-How secrets work (important)
+* The workflow uses GitHub **Environments** (e.g., `prod`).
+* Secrets are defined in the environment and mapped through five generic placeholders: `$S1` … `$S5`.
+* The workflow never needs to know provider-specific names (MinIO, Spotify, etc.), keeping the deploy logic fully generic.
 
-This workflow uses GitHub Environments.
+## Using the reusable workflow in a service repository
 
-Each service repo defines an environment (e.g. prod)
+1. **Ensure your service has a Dockerfile**
+   * Recommended path: `./Dockerfile`
+   * If different, set `dockerfile_path` accordingly.
 
-Secrets live inside that environment
+2. **Create an environment**
+   * In the service repository: `Settings → Environments → New environment → prod`
+   * Add required secrets (example):
+     * `MINIO_ACCESS_KEY`
+     * `MINIO_SECRET_KEY`
 
-The reusable workflow does not know provider names (MinIO, Spotify, etc.)
+3. **Add the deploy workflow**
+   * Create `.github/workflows/deploy.yml` with contents similar to:
 
-Secrets are mapped using 5 generic placeholders: $S1 … $S5
-
-This keeps the deploy logic fully generic.
-
-Using the reusable workflow in a service repo
-1. Ensure your service has a Dockerfile
-
-Recommended:
-
-./Dockerfile
-
-
-If not, you can specify a custom path using dockerfile_path.
-
-2. Create an Environment
-
-In the service repository:
-
-Settings → Environments → New environment → prod
-
-
-Add secrets required by the service, for example:
-
-MINIO_ACCESS_KEY
-
-MINIO_SECRET_KEY
-
-3. Add the deploy workflow
-
-Create:
-
-.github/workflows/deploy.yml
-
-
-Example:
-
+```yaml
 name: Deploy FileUploader
 
 on:
@@ -165,77 +115,59 @@ jobs:
       secret3_name: ""
       secret4_name: ""
       secret5_name: ""
+```
 
-Secret mapping model
+### Secret mapping model
 
-Environment secrets:
+* **Environment secrets**
+  * `MINIO_ACCESS_KEY`
+  * `MINIO_SECRET_KEY`
 
-MINIO_ACCESS_KEY
-MINIO_SECRET_KEY
+* **Workflow mapping**
+  * `secret1_name: MINIO_ACCESS_KEY`
+  * `secret2_name: MINIO_SECRET_KEY`
 
+* **Runtime .env result**
+  * `Minio__AccessKey=<real value>`
+  * `Minio__SecretKey=<real value>`
 
-Workflow mapping:
+> The reusable workflow never knows what MinIO is.
 
-secret1_name: MINIO_ACCESS_KEY
-secret2_name: MINIO_SECRET_KEY
-
-
-Runtime .env result:
-
-Minio__AccessKey=<real value>
-Minio__SecretKey=<real value>
-
-
-The reusable workflow never knows what MinIO is.
-
-Default conventions
+## Default conventions
 
 Recommended standards for all services:
 
-service_name → lowercase only
+* `service_name` uses lowercase only.
+* Containers listen on port `8080` internally.
+* Choose a unique host port per service.
+* Health endpoint: `/health`
+* Always set `ASPNETCORE_URLS=http://0.0.0.0:8080`
 
-Container listens on port 8080
+## Troubleshooting
 
-Host port is chosen per service
+**Dockerfile not found**
 
-Health endpoint → /health
+* Confirm the Dockerfile exists in the repo root, or set `dockerfile_path` explicitly.
 
-Always set:
+**Health check fails**
 
-ASPNETCORE_URLS=http://0.0.0.0:8080
+Run on the server:
 
-Troubleshooting
-Dockerfile not found
-
-Ensure Dockerfile exists in repo root
-or
-
-Set dockerfile_path explicitly
-
-Health check fails
-
-On the server:
-
+```bash
 docker ps
 docker logs -n 200 <service_name>
 curl http://127.0.0.1:<host_port>/health
+```
 
-GHCR error: repository name must be lowercase
+**GHCR error: repository name must be lowercase**
 
-Ensure service_name is lowercase
+* Ensure `service_name` is lowercase. (Org name is automatically lowercased by the workflow.)
 
-Org name is automatically lowercased by the workflow
+## Quick start checklist (new service)
 
-Quick start checklist (new service)
-
- Add Dockerfile
-
- Create prod environment
-
- Add required secrets
-
- Add deploy workflow
-
- Push to master
-
- Verify health endpoint
+* Add Dockerfile.
+* Create `prod` environment.
+* Add required secrets.
+* Add deploy workflow.
+* Push to `master`.
+* Verify health endpoint.
