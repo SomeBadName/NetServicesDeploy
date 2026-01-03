@@ -1,0 +1,45 @@
+name: Deploy <SERVICE_NAME>
+
+on:
+  push:
+    branches: [ "master" ]  # o main
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    uses: <ORG_NAME>/NetServicesDeploy/.github/workflows/deploy-dotnet-docker.yml@master
+    with:
+      # Required
+      environment_name: prod
+      service_name: <service_name_lowercase>
+      host_port: "<host_port_on_server>"         # e.g. "7100"
+      
+      # Optional (recommended to keep consistent)
+      container_port: "8080"
+      health_path: "/health"
+      dockerfile_path: "./Dockerfile"
+
+      # Non-secret runtime config (written to /opt/stacks/<service>/.env)
+      env_vars: |
+        ASPNETCORE_ENVIRONMENT=Production
+        ASPNETCORE_URLS=http://0.0.0.0:8080
+        # Add your config keys here (non-secret)
+        # Example:
+        # SomeApi__BaseUrl=https://example.com
+
+      # Secret lines template: left side is the config key you want in .env
+      # right side references $S1..$S5 (resolved from Environment secrets below)
+      env_secrets: |
+        # Example:
+        # SomeApi__ClientSecret=$S1
+        # AnotherSecret=$S2
+
+      # Environment secret names (in the SERVICE repo → Settings → Environments → prod)
+      secret1_name: ""     # e.g. SOMEAPI_CLIENT_SECRET
+      secret2_name: ""     # e.g. ANOTHER_SECRET
+      secret3_name: ""
+      secret4_name: ""
+      secret5_name: ""
