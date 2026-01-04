@@ -84,6 +84,22 @@ jobs:
       - name: Ensure stack folder
         run: mkdir -p "${STACK_DIR}"
 
+      - name: Debug secret slots (length only)
+        shell: bash
+        env:
+          S1: ${{ secrets.S1 }}
+          S2: ${{ secrets.S2 }}
+          S3: ${{ secrets.S3 }}
+          S4: ${{ secrets.S4 }}
+          S5: ${{ secrets.S5 }}
+        run: |
+          echo "S1 length=${#S1}"
+          echo "S2 length=${#S2}"
+          echo "S3 length=${#S3}"
+          echo "S4 length=${#S4}"
+          echo "S5 length=${#S5}"
+
+
       - name: Write stack .env
         shell: bash
         env:
