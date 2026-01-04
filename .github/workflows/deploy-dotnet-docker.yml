@@ -6,64 +6,33 @@ on:
       environment_name:
         type: string
         required: true
-
       service_name:
         type: string
         required: true
-
       host_port:
         type: string
         required: true
-
       container_port:
         type: string
         required: false
         default: "8080"
-
       stack_dir:
         type: string
         required: false
         default: ""
-
       dockerfile_path:
         type: string
         required: false
         default: "./Dockerfile"
-
       health_path:
         type: string
         required: false
         default: "/health"
-
       env_vars:
         type: string
         required: false
         default: ""
-
-      # Template lines that can reference $S1..$S5
       env_secrets:
-        type: string
-        required: false
-        default: ""
-
-      # Names of secrets stored in the caller repo Environment (inputs.environment_name)
-      secret1_name:
-        type: string
-        required: false
-        default: ""
-      secret2_name:
-        type: string
-        required: false
-        default: ""
-      secret3_name:
-        type: string
-        required: false
-        default: ""
-      secret4_name:
-        type: string
-        required: false
-        default: ""
-      secret5_name:
         type: string
         required: false
         default: ""
@@ -78,15 +47,13 @@ jobs:
     environment: ${{ inputs.environment_name }}
 
     steps:
-      - name: Checkout service repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Compute vars
         shell: bash
         run: |
           OWNER_LC="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           SERVICE="${{ inputs.service_name }}"
-
           echo "SERVICE=$SERVICE" >> $GITHUB_ENV
           echo "OWNER_LC=$OWNER_LC" >> $GITHUB_ENV
           echo "IMAGE=ghcr.io/${OWNER_LC}/${SERVICE}:latest" >> $GITHUB_ENV
@@ -114,31 +81,27 @@ jobs:
             ${{ env.IMAGE }}
             ghcr.io/${{ env.OWNER_LC }}/${{ env.SERVICE }}:${{ github.sha }}
 
-      - name: Ensure stack folder (no sudo)
-        run: |
-          mkdir -p "${STACK_DIR}"
+      - name: Ensure stack folder
+        run: mkdir -p "${STACK_DIR}"
 
-      - name: Write stack .env (vars + secret template)
+      - name: Write stack .env
         shell: bash
         env:
-          # Resolve secrets from the caller repo Environment by name (optional)
-          S1: ${{ inputs.secret1_name != '' && secrets[inputs.secret1_name] || '' }}
-          S2: ${{ inputs.secret2_name != '' && secrets[inputs.secret2_name] || '' }}
-          S3: ${{ inputs.secret3_name != '' && secrets[inputs.secret3_name] || '' }}
-          S4: ${{ inputs.secret4_name != '' && secrets[inputs.secret4_name] || '' }}
-          S5: ${{ inputs.secret5_name != '' && secrets[inputs.secret5_name] || '' }}
+          S1: ${{ secrets.S1 }}
+          S2: ${{ secrets.S2 }}
+          S3: ${{ secrets.S3 }}
+          S4: ${{ secrets.S4 }}
+          S5: ${{ secrets.S5 }}
         run: |
           {
             echo "IMAGE=${IMAGE}"
             echo "HOST_PORT=${{ inputs.host_port }}"
             echo "CONTAINER_PORT=${{ inputs.container_port }}"
 
-            # Plain vars
             if [[ -n "${{ inputs.env_vars }}" ]]; then
               printf '%s\n' "${{ inputs.env_vars }}"
             fi
 
-            # Secret lines template (supports $S1..$S5 placeholders)
             if [[ -n "${{ inputs.env_secrets }}" ]]; then
               while IFS= read -r line; do
                 [[ -z "$line" ]] && continue
@@ -150,11 +113,10 @@ jobs:
                 echo "$line"
               done <<< "${{ inputs.env_secrets }}"
             fi
-
           } > "${STACK_DIR}/.env"
           chmod 600 "${STACK_DIR}/.env"
 
-      - name: Render docker-compose.yml (from template)
+      - name: Render docker-compose.yml
         shell: bash
         run: |
           cat > "${STACK_DIR}/docker-compose.yml" <<YML
@@ -171,7 +133,7 @@ jobs:
               restart: unless-stopped
           YML
 
-      - name: Deploy (pull + up)
+      - name: Deploy
         run: |
           cd "${STACK_DIR}"
           docker compose pull
@@ -182,13 +144,8 @@ jobs:
         shell: bash
         run: |
           URL="http://127.0.0.1:${{ inputs.host_port }}${{ inputs.health_path }}"
-          echo "Checking $URL"
           for i in {1..60}; do
-            if curl -fsS --max-time 2 "$URL" >/dev/null; then
-              echo "OK"
-              exit 0
-            fi
+            if curl -fsS --max-time 2 "$URL" >/dev/null; then exit 0; fi
             sleep 1
           done
-          echo "Healthcheck failed" >&2
           exit 1
