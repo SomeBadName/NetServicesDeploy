@@ -142,9 +142,15 @@ jobs:
             if [[ -n "${{ inputs.env_secrets }}" ]]; then
               while IFS= read -r line; do
                 [[ -z "$line" ]] && continue
-                eval "echo \"$line\""
+                line="${line//\$S1/$S1}"
+                line="${line//\$S2/$S2}"
+                line="${line//\$S3/$S3}"
+                line="${line//\$S4/$S4}"
+                line="${line//\$S5/$S5}"
+                echo "$line"
               done <<< "${{ inputs.env_secrets }}"
             fi
+
           } > "${STACK_DIR}/.env"
           chmod 600 "${STACK_DIR}/.env"
 
