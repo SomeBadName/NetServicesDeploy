@@ -1,0 +1,141 @@
+name: "Deploy Docker Service"
+description: "Builds, pushes to GHCR, writes /opt/stacks/<service> stack files, deploys via docker compose, and healthchecks."
+
+inputs:
+  service_name:
+    description: "Lowercase service name (used for GHCR repo, container name, and stack dir)."
+    required: true
+  host_port:
+    description: "Port exposed on the server host."
+    required: true
+  container_port:
+    description: "Port inside the container. Default 8080."
+    required: false
+    default: "8080"
+  dockerfile_path:
+    description: "Path to Dockerfile."
+    required: false
+    default: "./Dockerfile"
+  health_path:
+    description: "Health endpoint path."
+    required: false
+    default: "/health"
+  stack_dir:
+    description: "Override stack dir. Default /opt/stacks/<service_name>."
+    required: false
+    default: ""
+  env_vars:
+    description: "Multiline non-secret env vars to write into stack .env"
+    required: false
+    default: ""
+  env_secrets:
+    description: "Multiline secret env vars to write into stack .env (values already resolved in the caller workflow)."
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate service name
+      shell: bash
+      run: |
+        SERVICE="${{ inputs.service_name }}"
+        if [[ ! "$SERVICE" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+          echo "service_name must be lowercase and contain only [a-z0-9-]. Got: $SERVICE" >&2
+          exit 1
+        fi
+
+    - name: Compute vars
+      shell: bash
+      run: |
+        OWNER_LC="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+        SERVICE="${{ inputs.service_name }}"
+        echo "OWNER_LC=$OWNER_LC" >> "$GITHUB_ENV"
+        echo "SERVICE=$SERVICE" >> "$GITHUB_ENV"
+        echo "IMAGE=ghcr.io/${OWNER_LC}/${SERVICE}:latest" >> "$GITHUB_ENV"
+
+        if [[ -n "${{ inputs.stack_dir }}" ]]; then
+          echo "STACK_DIR=${{ inputs.stack_dir }}" >> "$GITHUB_ENV"
+        else
+          echo "STACK_DIR=/opt/stacks/${SERVICE}" >> "$GITHUB_ENV"
+        fi
+
+    - name: Log in to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+
+    - name: Build & push image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: ${{ inputs.dockerfile_path }}
+        push: true
+        tags: |
+          ${{ env.IMAGE }}
+          ghcr.io/${{ env.OWNER_LC }}/${{ env.SERVICE }}:${{ github.sha }}
+
+    - name: Ensure stack folder
+      shell: bash
+      run: |
+        mkdir -p "${STACK_DIR}"
+
+    - name: Write stack .env (image + runtime vars)
+      shell: bash
+      run: |
+        {
+          echo "IMAGE=${IMAGE}"
+          echo "HOST_PORT=${{ inputs.host_port }}"
+          echo "CONTAINER_PORT=${{ inputs.container_port }}"
+
+          if [[ -n "${{ inputs.env_vars }}" ]]; then
+            printf '%s\n' "${{ inputs.env_vars }}"
+          fi
+
+          if [[ -n "${{ inputs.env_secrets }}" ]]; then
+            printf '%s\n' "${{ inputs.env_secrets }}"
+          fi
+        } > "${STACK_DIR}/.env"
+        chmod 600 "${STACK_DIR}/.env"
+
+    - name: Render docker-compose.yml
+      shell: bash
+      run: |
+        cat > "${STACK_DIR}/docker-compose.yml" <<YML
+        services:
+          ${SERVICE}:
+            image: ${IMAGE}
+            container_name: ${SERVICE}
+            ports:
+              - "${{ inputs.host_port }}:${{ inputs.container_port }}"
+            env_file:
+              - .env
+            environment:
+              ASPNETCORE_URLS: http://0.0.0.0:${{ inputs.container_port }}
+            restart: unless-stopped
+        YML
+
+    - name: Deploy (pull + up)
+      shell: bash
+      run: |
+        cd "${STACK_DIR}"
+        docker compose pull
+        docker compose up -d
+        docker ps --filter "name=${SERVICE}"
+
+    - name: Health check
+      shell: bash
+      run: |
+        URL="http://127.0.0.1:${{ inputs.host_port }}${{ inputs.health_path }}"
+        echo "Checking $URL"
+        for i in {1..60}; do
+          if curl -fsS --max-time 2 "$URL" >/dev/null; then
+            echo "OK"
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "Healthcheck failed" >&2
+        exit 1
