@@ -88,7 +88,10 @@ jobs:
           tags: |
             ${{ env.IMAGE }}
             ghcr.io/${{ env.OWNER_LC }}/${{ env.SERVICE }}:${{ github.sha }}
-          build-args: ${{ inputs.build_args }}
+          build-args: |
+            NUGET_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            GITHUB_ACTOR=${{ github.actor }}
+            ${{ inputs.build_args }}
 
       - name: Ensure stack folder
         run: mkdir -p "${STACK_DIR}"
