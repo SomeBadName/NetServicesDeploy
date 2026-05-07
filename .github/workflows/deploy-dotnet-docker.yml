@@ -40,6 +40,10 @@ on:
         type: string
         required: false
         default: ""
+      runner:
+        type: string
+        required: false
+        default: "self-hosted"
 
 permissions:
   contents: read
@@ -47,7 +51,7 @@ permissions:
 
 jobs:
   build_and_deploy:
-    runs-on: [self-hosted]
+    runs-on: ${{ inputs.runner }}
     environment: ${{ inputs.environment_name }}
 
     steps:
