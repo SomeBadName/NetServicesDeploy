@@ -44,6 +44,10 @@ on:
         type: string
         required: false
         default: "self-hosted"
+      nuget_owner:
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -91,7 +95,7 @@ jobs:
           build-args: |
             NUGET_AUTH_TOKEN=${{ secrets.NUGET_READ_TOKEN || secrets.GITHUB_TOKEN }}
             GITHUB_ACTOR=${{ github.actor }}
-            GITHUB_OWNER=${{ github.repository_owner }}
+            GITHUB_OWNER=${{ inputs.nuget_owner }}
             ${{ inputs.build_args }}
 
       - name: Ensure stack folder
