@@ -91,6 +91,7 @@ jobs:
           build-args: |
             NUGET_AUTH_TOKEN=${{ secrets.NUGET_READ_TOKEN || secrets.GITHUB_TOKEN }}
             GITHUB_ACTOR=${{ github.actor }}
+            GITHUB_OWNER=${{ github.repository_owner }}
             ${{ inputs.build_args }}
 
       - name: Ensure stack folder
