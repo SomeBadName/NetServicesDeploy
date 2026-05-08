@@ -110,6 +110,8 @@ jobs:
           S4: ${{ secrets.S4 }}
           S5: ${{ secrets.S5 }}
           S6: ${{ secrets.S6 }}
+          S7: ${{ secrets.S7 }}
+          S8: ${{ secrets.S8 }}
         run: |
           echo "S1 length=${#S1}"
           echo "S2 length=${#S2}"
@@ -117,6 +119,8 @@ jobs:
           echo "S4 length=${#S4}"
           echo "S5 length=${#S5}"
           echo "S6 length=${#S6}"
+          echo "S7 length=${#S7}"
+          echo "S8 length=${#S8}"
 
 
       - name: Write stack .env
@@ -128,6 +132,8 @@ jobs:
           S4: ${{ secrets.S4 }}
           S5: ${{ secrets.S5 }}
           S6: ${{ secrets.S6 }}
+          S7: ${{ secrets.S7 }}
+          S8: ${{ secrets.S8 }}
         run: |
           {
             echo "IMAGE=${IMAGE}"
@@ -147,6 +153,8 @@ jobs:
                 line="${line//\$S4/$S4}"
                 line="${line//\$S5/$S5}"
                 line="${line//\$S6/$S6}"
+                line="${line//\$S7/$S7}"
+                line="${line//\$S8/$S8}"
                 echo "$line"
               done <<< "${{ inputs.env_secrets }}"
             fi
